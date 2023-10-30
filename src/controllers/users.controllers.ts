@@ -1,7 +1,7 @@
 import { NextFunction, Request, Response } from 'express'
 import usersService from '~/services/users.services'
 import { ParamsDictionary } from 'express-serve-static-core'
-import { RegisterReqBody } from '~/models/requests/User.reques'
+import { LogoutReqBody, RegisterReqBody } from '~/models/requests/User.reques'
 import User from '~/models/schemas/User.schema'
 import { ObjectId } from 'mongodb'
 import { USERS_MESSAGES } from '~/constants/message'
@@ -36,3 +36,14 @@ export const registerController = async (
     result
   }) //trả về kết quả
 } //nếu có lỗi thì nó sẽ bị catch ở dưới
+
+export const logoutController = async (req: Request<ParamsDictionary, any, LogoutReqBody>, res: Response) => {
+  //lấy refresh token từ req.body
+  const refresh_token = req.body.refresh_token as string
+  //gọi hàm logout, hàm nhận vào refresh token tìm và xoá
+  const result = await usersService.logout(refresh_token)
+  res.json(result)
+  // res.json({
+  //   message: 'logout successfully'
+  // })
+}
