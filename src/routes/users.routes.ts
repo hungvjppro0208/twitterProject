@@ -1,8 +1,14 @@
 import { Router } from 'express'
 import { access } from 'fs'
-import { loginController, logoutController, registerController } from '~/controllers/users.controllers'
+import {
+  emailVerifyController,
+  loginController,
+  logoutController,
+  registerController
+} from '~/controllers/users.controllers'
 import {
   accessTokenValidator,
+  emailVerifyTokenValidator,
   loginValidator,
   refreshTokenValidator,
   registerValidator
@@ -24,4 +30,14 @@ body: {refresh_token: string}
 */
 usersRouter.post('/logout', accessTokenValidator, refreshTokenValidator, wrapAsync(logoutController))
 
+/*
+des: verify email
+khi người dùng đăng ký, trong email của họ sẽ có 1 link
+trong link này đã setup sẵn 1 request kèm email_verify_token
+thì verify email là cái route cho request đó 
+path: /users/verify-email?token=<email_verify_token>
+
+*/
+
+usersRouter.post('/verify-email', emailVerifyTokenValidator, wrapAsync(emailVerifyController))
 export default usersRouter

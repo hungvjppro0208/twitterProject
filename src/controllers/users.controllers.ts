@@ -1,10 +1,13 @@
 import { NextFunction, Request, Response } from 'express'
 import usersService from '~/services/users.services'
 import { ParamsDictionary } from 'express-serve-static-core'
-import { LogoutReqBody, RegisterReqBody } from '~/models/requests/User.reques'
+import { LogoutReqBody, RegisterReqBody, TokenPayload, emailVerifyReqBody } from '~/models/requests/User.reques'
 import User from '~/models/schemas/User.schema'
 import { ObjectId } from 'mongodb'
 import { USERS_MESSAGES } from '~/constants/message'
+import databaseService from '~/services/database.severvices'
+import { NOTFOUND } from 'dns'
+import HTTP_STATUS from '~/constants/httpStatus'
 export const loginController = async (req: Request, res: Response) => {
   // throw new Error('test error') // test error
   //vào req.user để lấy thông tin user đó ra
@@ -46,4 +49,31 @@ export const logoutController = async (req: Request<ParamsDictionary, any, Logou
   // res.json({
   //   message: 'logout successfully'
   // })
+}
+
+export const emailVerifyController = async (req: Request<ParamsDictionary, any, emailVerifyReqBody>, res: Response) => {
+  //khi mà req vào được đây nghĩa là email token đã valid
+  //đồng thời trong req sẽ có decoded email_verify_token
+  const { user_id } = req.decoded_email_verify_token as TokenPayload
+  //tìm xem có user có mã này hay không
+  const user = await databaseService.users.findOne({ _id: new ObjectId(user_id) })
+  if (user === null) {
+    return res.status(HTTP_STATUS.NOT_FOUND).json({
+      message: USERS_MESSAGES.USER_NOT_FOUND
+    })
+  }
+  //nếu mà email_verify_token là rỗng: tức là account đã đc verify email trước đó rồi
+  if (user.email_verify_token === ' ') {
+    //mặc định status code là 200
+    return res.json({
+      message: USERS_MESSAGES.EMAIL_ALREADY_VERIFIED_BEFORE
+    })
+  }
+  const result = await usersService.verifyEmail(user_id)
+  //để cập nhật lại email_verify_token thành rỗng và tạo ra access token và refresh token
+  //gửi cho người vừa request email verify đăng nhập luôn
+  return res.json({
+    message: USERS_MESSAGES.EMAIL_VERIFY_SUCCESS,
+    result: result
+  })
 }
