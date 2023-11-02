@@ -3,6 +3,7 @@ import { access } from 'fs'
 import {
   emailVerifyController,
   forgotPasswordController,
+  getMeController,
   loginController,
   logoutController,
   registerController,
@@ -87,4 +88,14 @@ Header: không cần, vì  ngta quên mật khẩu rồi, thì sao mà đăng nh
 body: {forgot_password_token: string, password: string, confirm_password: string}
 */
 usersRouter.post('/reset-password', resetPasswordValidator, wrapAsync(resetPasswordController))
+
+/*
+des: get profile của user
+path: '/me'
+method: get
+Header: {Authorization: Bearer <access_token>}
+body: {}
+*/
+usersRouter.get('/me', accessTokenValidator, wrapAsync(getMeController))
+
 export default usersRouter

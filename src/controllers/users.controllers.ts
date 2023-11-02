@@ -25,7 +25,10 @@ export const loginController = async (req: Request<ParamsDictionary, any, LoginR
   //dùng cái user_id để tạo token và refresh token
   const user = req.user as User //lấy user từ req.user
   const user_id = user._id as ObjectId //lấy id từ user
-  const result = await usersService.login(user_id.toString()) //gọi hàm login từ service để tạo token và refresh token
+  const result = await usersService.login({
+    user_id: user_id.toString(),
+    verify: user.verify
+  }) //gọi hàm login từ service để tạo token và refresh token
   //nếu không bug gì thì thành công luôn
   return res.status(200).json({
     message: USERS_MESSAGES.LOGIN_SUCCESS,
@@ -125,10 +128,8 @@ export const forgotPasswordController = async (
   next: NextFunction
 ) => {
   //middleware forgotPasswordValidator đã chạy rồi, nên ta có thể lấy _id từ user đã tìm đc bằng email
-  const { _id } = req.user as User
-  //cái _id này là objectid, nên ta phải chuyển nó về string
-  //chứ không truyền trực tiếp vào hàm forgotPassword
-  const result = await usersService.forgotPassword((_id as ObjectId).toString())
+  const { _id, verify } = req.user as User
+  const result = await usersService.forgotPassword({ user_id: (_id as ObjectId).toString(), verify })
   return res.json(result)
 }
 
@@ -159,3 +160,16 @@ export const resetPasswordController = async (
   const result = await usersService.resetPassword(user_id, password) //ta chưa code resetPassword
   return res.json(result)
 }
+export const getMeController = async (req: Request, res: Response, next: NextFunction) => {
+  //middleware accessTokenValidator đã chạy rồi, nên ta có thể lấy đc user_id từ decoded_authorization
+  const { user_id } = req.decoded_authorization as TokenPayload
+  //tìm user thông qua user_id này và trả về user đó
+  //truy cập vào database nên ta sẽ code ở user.services
+  const user = await usersService.getMe(user_id) // hàm này ta chưa code, nhưng nó dùng user_id tìm user và trả ra user đó
+  return res.json({
+    message: USERS_MESSAGES.GET_ME_SUCCESS,
+    result: user
+  })
+}
+
+//trong messages.ts thêm GET_ME_SUCCESS: 'Get me success'

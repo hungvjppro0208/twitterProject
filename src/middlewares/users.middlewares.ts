@@ -45,6 +45,7 @@ const passwordSchema: ParamSchema = {
   },
   errorMessage: USERS_MESSAGES.PASSWORD_MUST_BE_STRONG
 }
+
 const confirmPasswordSchema: ParamSchema = {
   notEmpty: {
     errorMessage: USERS_MESSAGES.CONFIRM_PASSWORD_IS_REQUIRED

@@ -1,14 +1,10 @@
 import { NextFunction, Request, Response } from 'express'
-import { checkSchema } from 'express-validator'
-import { JsonWebTokenError } from 'jsonwebtoken'
-import { capitalize, omit } from 'lodash'
-import { ObjectId } from 'mongodb'
+
+import { omit } from 'lodash'
+
 import HTTP_STATUS from '~/constants/httpStatus'
-import { USERS_MESSAGES } from '~/constants/message'
+
 import { ErrorWithStatus } from '~/models/Errors'
-import databaseService from '~/services/database.severvices'
-import { verifyToken } from '~/utils/jwt'
-import { validate } from '~/utils/validation'
 
 export const defaultErrorHandler = (err: any, req: Request, res: Response, next: NextFunction) => {
   // res.status(err.status || HTTP_STATUS.INTERNAL_SERVER_ERROR).json(omit(err, ['status']))

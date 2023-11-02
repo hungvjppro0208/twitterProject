@@ -9,35 +9,35 @@ import RefreshToken from '~/models/schemas/RefreshToken.schema'
 import { USERS_MESSAGES } from '~/constants/message'
 
 class UsersService {
-  private signAccessToken(user_Id: string) {
+  private signAccessToken({ user_id, verify }: { user_id: string; verify: UserVerifyStatus }) {
     return signToken({
-      payload: { user_Id, token_type: TokenType.AccessToken },
+      payload: { user_id, token_type: TokenType.AccessToken, verify },
       options: { expiresIn: process.env.ACCESS_TOKEN_EXPIRE_IN },
       privateKey: process.env.JWT_SECRET_ACCESS_TOKEN as string
     })
   }
-  private signRefreshToken(user_Id: string) {
+  private signRefreshToken({ user_id, verify }: { user_id: string; verify: UserVerifyStatus }) {
     return signToken({
-      payload: { user_Id, token_type: TokenType.RefreshToken },
+      payload: { user_id, token_type: TokenType.RefreshToken, verify },
       options: { expiresIn: process.env.REFRESH_TOKEN_EXPIRE_IN },
       privateKey: process.env.JWT_SECRET_REFRESH_TOKEN as string
     })
   }
-  private signEmailVerifyToken(user_id: string) {
+  private signEmailVerifyToken({ user_id, verify }: { user_id: string; verify: UserVerifyStatus }) {
     return signToken({
-      payload: { user_id, token_type: TokenType.EmailVerificationToken },
+      payload: { user_id, token_type: TokenType.EmailVerificationToken, verify },
       options: { expiresIn: process.env.EMAIL_VERIFY_TOKEN_EXPIRE_IN },
       privateKey: process.env.JWT_SECRET_EMAIL_VERIFY_TOKEN as string //thêm
     })
   }
-  private signAccessAndRefreshToken(user_Id: string) {
-    return Promise.all([this.signAccessToken(user_Id), this.signRefreshToken(user_Id)])
+  private signAccessAndRefreshToken({ user_id, verify }: { user_id: string; verify: UserVerifyStatus }) {
+    return Promise.all([this.signAccessToken({ user_id, verify }), this.signRefreshToken({ user_id, verify })])
   }
 
   //tạo hàm signForgotPasswordToken
-  private signForgotPasswordToken(user_id: string) {
+  private signForgotPasswordToken({ user_id, verify }: { user_id: string; verify: UserVerifyStatus }) {
     return signToken({
-      payload: { user_id, token_type: TokenType.ForgotPasswordToken },
+      payload: { user_id, token_type: TokenType.ForgotPasswordToken, verify },
       options: { expiresIn: process.env.FORGOT_PASSWORD_TOKEN_EXPIRE_IN },
       privateKey: process.env.JWT_SECRET_FORGOT_PASSWORD_TOKEN as string //thêm
     })
@@ -45,7 +45,10 @@ class UsersService {
   async register(payload: RegisterReqBody) {
     //tạo user mới
     const user_id = new ObjectId()
-    const email_verify_token = await this.signEmailVerifyToken(user_id.toString())
+    const email_verify_token = await this.signEmailVerifyToken({
+      user_id: user_id.toString(),
+      verify: UserVerifyStatus.Unverified
+    })
     const result = await databaseService.users.insertOne(
       new User({
         ...payload,
@@ -57,7 +60,10 @@ class UsersService {
     )
 
     //xài ở đây
-    const [access_token, refresh_token] = await this.signAccessAndRefreshToken(user_id.toString())
+    const [access_token, refresh_token] = await this.signAccessAndRefreshToken({
+      user_id: user_id.toString(),
+      verify: UserVerifyStatus.Unverified
+    })
     //lưu refresh token vào database
     await databaseService.refreshTokens.insertOne(
       new RefreshToken({
@@ -76,8 +82,11 @@ class UsersService {
     const user = await databaseService.users.findOne({ email })
     return Boolean(user)
   }
-  async login(user_id: string) {
-    const [access_token, refresh_token] = await this.signAccessAndRefreshToken(user_id)
+  async login({ user_id, verify }: { user_id: string; verify: UserVerifyStatus }) {
+    const [access_token, refresh_token] = await this.signAccessAndRefreshToken({
+      user_id,
+      verify
+    })
     await databaseService.refreshTokens.insertOne(
       new RefreshToken({
         user_id: new ObjectId(user_id),
@@ -98,7 +107,7 @@ class UsersService {
     //token này chứa access_token và refresh_token
     //đồng thời tìm user và update lại email verify token thành '', verify thành 1, updateA
     const [token] = await Promise.all([
-      this.signAccessAndRefreshToken(user_id),
+      this.signAccessAndRefreshToken({ user_id, verify: UserVerifyStatus.Verified }),
       databaseService.users.updateOne(
         { _id: new ObjectId(user_id) }, //tìm user thông qua _id
         [
@@ -123,7 +132,10 @@ class UsersService {
   }
   async resendEmailVerify(user_id: string) {
     //tạo ra email_verify_token mới
-    const email_verify_token = await this.signEmailVerifyToken(user_id)
+    const email_verify_token = await this.signEmailVerifyToken({
+      user_id: user_id,
+      verify: UserVerifyStatus.Unverified
+    })
     //chưa làm chức năng gữi email, nên giả bộ ta đã gữi email cho client rồi, hiển thị bằng console.log
     console.log('resend verify email token', email_verify_token)
     //vào database và cập nhật lại email_verify_token mới trong table user
@@ -142,9 +154,9 @@ class UsersService {
   //JWT_SECRET_FORGOT_PASSWORD_TOKEN = '123!@#22'
   //FORGOT_PASSWORD_TOKEN_EXPIRE_IN = '7d'
 
-  async forgotPassword(user_id: string) {
+  async forgotPassword({ user_id, verify }: { user_id: string; verify: UserVerifyStatus }) {
     //tạo ra forgot_password_token
-    const forgot_password_token = await this.signForgotPasswordToken(user_id)
+    const forgot_password_token = await this.signForgotPasswordToken({ user_id, verify })
     //cập nhật vào forgot_password_token và user_id
     await databaseService.users.updateOne({ _id: new ObjectId(user_id) }, [
       {
@@ -182,7 +194,21 @@ class UsersService {
     }
   }
   //vào messages.ts thêm RESET_PASSWORD_SUCCESS: 'Reset password success'
+  async getMe(user_id: string) {
+    const user = await databaseService.users.findOne(
+      { _id: new ObjectId(user_id) },
+      {
+        projection: {
+          password: 0,
+          email_verify_token: 0,
+          forgot_password_token: 0
+        }
+      }
+    )
+    return user // sẽ k có những thuộc tính nêu trên, tránh bị lộ thông tin
+  }
 }
+//trong dó projection giúp ta loại bỏ lấy về các thuộc tính như password, email_verify_token, forgot_password_token
 
 const usersService = new UsersService()
 export default usersService
