@@ -1,12 +1,17 @@
 import User from '~/models/schemas/User.schema'
 import databaseService from './database.severvices'
-import { RegisterReqBody } from '~/models/requests/User.reques'
+import { RegisterReqBody, UpdateMeReqBody } from '~/models/requests/User.reques'
 import { hashPassword } from '~/utils/crypto'
 import { signToken } from '~/utils/jwt'
 import { TokenType, UserVerifyStatus } from '~/constants/enums'
 import { ObjectId } from 'mongodb'
 import RefreshToken from '~/models/schemas/RefreshToken.schema'
 import { USERS_MESSAGES } from '~/constants/message'
+import { verify } from 'crypto'
+import { create, update } from 'lodash'
+import { ErrorWithStatus } from '~/models/Errors'
+import HTTP_STATUS from '~/constants/httpStatus'
+import { Follower } from '~/models/schemas/Followers.schema'
 
 class UsersService {
   private signAccessToken({ user_id, verify }: { user_id: string; verify: UserVerifyStatus }) {
@@ -54,6 +59,7 @@ class UsersService {
         ...payload,
         _id: user_id,
         email_verify_token,
+        username: `user${user_id.toString()}`, //thêm prop này
         date_of_birth: new Date(payload.date_of_birth),
         password: hashPassword(payload.password)
       })
@@ -206,6 +212,147 @@ class UsersService {
       }
     )
     return user // sẽ k có những thuộc tính nêu trên, tránh bị lộ thông tin
+  }
+  async updateMe(user_id: string, payload: UpdateMeReqBody) {
+    //payload là những gì người dùng đã gữi lên ở body request
+    //có vấn đề là người dùng gữi date_of_birth lên dưới dạng string iso8601
+    //nhưng ta cần gữi lên mongodb dưới dạng date
+    //nên
+    const _payload = payload.date_of_birth ? { ...payload, date_of_birth: new Date(payload.date_of_birth) } : payload
+    //mongo cho ta 2 lựa chọn update là updateOne và findOneAndUpdate
+    //findOneAndUpdate thì ngoài update nó còn return về document đã update
+    const user = await databaseService.users.findOneAndUpdate(
+      { _id: new ObjectId(user_id) },
+      [
+        {
+          $set: {
+            ..._payload,
+            updated_at: '$$NOW'
+          }
+        }
+      ],
+      {
+        returnDocument: 'after', //trả về document sau khi update, nếu k thì nó trả về document cũ
+        projection: {
+          //chặn các property k cần thiết
+          password: 0,
+          email_verify_token: 0,
+          forgot_password_token: 0
+        }
+      }
+    )
+    return user.value //đây là document sau khi update
+  }
+
+  async getProfile(username: string) {
+    const user = await databaseService.users.findOne(
+      { username: username },
+      {
+        projection: {
+          password: 0,
+          email_verify_token: 0,
+          forgot_password_token: 0,
+          verify: 0,
+          created_at: 0,
+          updated_at: 0
+        }
+      }
+    )
+    if (user == null) {
+      throw new ErrorWithStatus({
+        message: USERS_MESSAGES.USER_NOT_FOUND,
+        status: HTTP_STATUS.NOT_FOUND
+      })
+    }
+    return user
+  }
+  async follow(user_id: string, followed_user_id: string) {
+    //kiểm tra xem đã follow hay chưa
+    const isFollowed = await databaseService.followers.findOne({
+      user_id: new ObjectId(user_id),
+      followed_user_id: new ObjectId(followed_user_id)
+    })
+    //nếu đã follow thì return message là đã follow
+    if (isFollowed != null) {
+      return {
+        message: USERS_MESSAGES.FOLLOWED // trong message.ts thêm FOLLOWED: 'Followed'
+      }
+    }
+    //chưa thì thêm 1 document vào collection followers
+    await databaseService.followers.insertOne(
+      new Follower({
+        user_id: new ObjectId(user_id),
+        followed_user_id: new ObjectId(followed_user_id)
+      })
+    )
+    return {
+      message: USERS_MESSAGES.FOLLOW_SUCCESS //trong message.ts thêm   FOLLOW_SUCCESS: 'Follow success'
+    }
+  }
+  async unfollow(user_id: string, followed_user_id: string) {
+    //kiểm tra xem đã follow hay chưa
+    const isFollowed = await databaseService.followers.findOne({
+      user_id: new ObjectId(user_id),
+      followed_user_id: new ObjectId(followed_user_id)
+    })
+
+    //nếu chưa follow thì return message là "đã unfollow trước đó" luôn
+    if (isFollowed == null) {
+      return {
+        message: USERS_MESSAGES.ALREADY_UNFOLLOWED // trong message.ts thêm ALREADY_UNFOLLOWED: 'Already unfollowed'
+      }
+    }
+
+    //nếu đang follow thì tìm và xóa document đó
+    const result = await databaseService.followers.deleteOne({
+      user_id: new ObjectId(user_id),
+      followed_user_id: new ObjectId(followed_user_id)
+    })
+
+    //nếu xóa thành công thì return message là unfollow success
+    return {
+      message: USERS_MESSAGES.UNFOLLOW_SUCCESS // trong message.ts thêm UNFOLLOW_SUCCESS: 'Unfollow success'
+    }
+  }
+  async changePassword(user_id: string, password: string) {
+    //tìm user thông qua user_id
+    //cập nhật lại password và forgot_password_token
+    //tất nhiên là lưu password đã hash rồi
+    databaseService.users.updateOne({ _id: new ObjectId(user_id) }, [
+      {
+        $set: {
+          password: hashPassword(password),
+          forgot_password_token: '',
+          updated_at: '$$NOW'
+        }
+      }
+    ])
+    //nếu bạn muốn ngta đổi mk xong tự động đăng nhập luôn thì trả về access_token và refresh_token
+    //ở đây mình chỉ cho ngta đổi mk thôi, nên trả về message
+    return {
+      message: USERS_MESSAGES.CHANGE_PASSWORD_SUCCESS // trong message.ts thêm CHANGE_PASSWORD_SUCCESS: 'Change password success'
+    }
+  }
+  async refreshToken(user_id: string, verify: UserVerifyStatus, refresh_token: string) {
+    //tạo mới
+    const [new_access_token, new_refresh_token] = await Promise.all([
+      this.signAccessToken({
+        user_id: user_id,
+        verify
+      }),
+      this.signRefreshToken({
+        user_id: user_id,
+        verify
+      })
+    ])
+    //vì một người đăng nhập ở nhiều nơi khác nhau, nên họ sẽ có rất nhiều document trong collection refreshTokens
+    //ta không thể dùng user_id để tìm document cần update, mà phải dùng token, đọc trong RefreshToken.schema.ts
+    await databaseService.refreshTokens.deleteOne({ token: refresh_token }) //xóa refresh
+    //insert lại document mới
+    await databaseService.refreshTokens.insertOne(
+      new RefreshToken({ user_id: new ObjectId(user_id), token: new_refresh_token })
+    )
+    return { access_token: new_access_token, refresh_token: new_refresh_token }
   }
 }
 //trong dó projection giúp ta loại bỏ lấy về các thuộc tính như password, email_verify_token, forgot_password_token

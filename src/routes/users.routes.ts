@@ -1,27 +1,40 @@
 import { Router } from 'express'
 import { access } from 'fs'
 import {
+  changePasswordController,
   emailVerifyController,
+  followController,
   forgotPasswordController,
   getMeController,
+  getProfileController,
   loginController,
   logoutController,
+  refreshTokenController,
   registerController,
   resendEmailVerifyController,
   resetPasswordController,
+  unfollowController,
+  updateMeController,
   verifyForgotPasswordTokenController
 } from '~/controllers/users.controllers'
+import { filterMiddleware } from '~/middlewares/common.middlewares'
 
 import {
   accessTokenValidator,
+  changePasswordValidator,
   emailVerifyTokenValidator,
+  followValidator,
   forgotPasswordValidator,
   loginValidator,
   refreshTokenValidator,
   registerValidator,
   resetPasswordValidator,
+  unfollowValidator,
+  updateMeValidator,
+  verifiedUserValidator,
   verifyForgotPasswordTokenValidator
 } from '~/middlewares/users.middlewares'
+import { UpdateMeReqBody } from '~/models/requests/User.reques'
 import { wrapAsync } from '~/utils/handlers'
 
 const usersRouter = Router()
@@ -98,4 +111,84 @@ body: {}
 */
 usersRouter.get('/me', accessTokenValidator, wrapAsync(getMeController))
 
+usersRouter.patch(
+  '/me',
+  accessTokenValidator,
+  verifiedUserValidator,
+  filterMiddleware<UpdateMeReqBody>([
+    'name',
+    'date_of_birth',
+    'bio',
+    'location',
+    'website',
+    'avatar',
+    'username',
+    'cover_photo'
+  ]),
+  updateMeValidator,
+  wrapAsync(updateMeController)
+)
+//truyền khác key là nó báo lỗi ngay
+
+/*
+des: get profile của user khác bằng unsername
+path: '/:username'
+method: get
+không cần header vì, chưa đăng nhập cũng có thể xem
+*/
+usersRouter.get('/:username', wrapAsync(getProfileController))
+//chưa có controller getProfileController, nên bây giờ ta làm
+
+/*
+des: Follow someone
+path: '/follow'
+method: post
+headers: {Authorization: Bearer <access_token>}
+body: {followed_user_id: string}
+*/
+usersRouter.get('/follow', accessTokenValidator, verifiedUserValidator, followValidator, wrapAsync(followController))
+
+/*
+    des: unfollow someone
+    path: '/follow/:user_id'
+    method: delete
+    headers: {Authorization: Bearer <access_token>}
+  g}
+    */
+usersRouter.delete(
+  '/follow/:user_id',
+  accessTokenValidator,
+  verifiedUserValidator,
+  unfollowValidator,
+  wrapAsync(unfollowController)
+)
+//unfollowValidator: kiểm tra user_id truyền qua params có hợp lệ hay k?
+
+/*
+  des: change password
+  path: '/change-password'
+  method: PUT
+  headers: {Authorization: Bearer <access_token>}
+  Body: {old_password: string, password: string, confirm_password: string}
+g}
+  */
+usersRouter.put(
+  '/change-password',
+  accessTokenValidator,
+  verifiedUserValidator,
+  changePasswordValidator,
+  wrapAsync(changePasswordController)
+)
+//changePasswordValidator kiểm tra các giá trị truyền lên trên body cớ valid k ?
+
+/*
+  des: refreshtoken
+  path: '/refresh-token'
+  method: POST
+  Body: {refresh_token: string}
+g}
+  */
+usersRouter.post('/refresh-token', refreshTokenValidator, wrapAsync(refreshTokenController))
+//khỏi kiểm tra accesstoken, tại nó hết hạn rồi mà
+//refreshController chưa làm
 export default usersRouter
